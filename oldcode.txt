@@ -1,0 +1,63 @@
+# def value_to_biome(noise_grid):
+#     # Digitize noise values based on thresholds
+#     biome_indices = np.digitize(noise_grid, thresholds) - 1
+
+#     # Convert indices to biome names
+#     biome_names = np.array([
+#         'deep_ocean', 'ocean', 'high_ocean', 'river',
+#         'plains', 'forest', 'hills', 'mountain', 'snow', 'ice'
+#     ])
+
+#     # Map numerical indices to biome names
+#     return biome_names[biome_indices]
+
+# # Function to generate the biome map from the noise grid
+# def generate_biome_map(noise_grid):
+#     biome_map = []
+#     for row in noise_grid:
+#         biome_row = [value_to_biome(value) for value in row]
+#         biome_map.append(biome_row)
+#     return np.array(biome_map)
+
+# # Function to map biome names to numbers
+# def biome_to_number(biome_map):
+#     # Define a dictionary that maps biome names to unique integers
+#     biome_to_num = {
+#         'deep_ocean': 0,
+#         'ocean': 1,
+#         'high_ocean': 2,
+#         'river': 3,
+#         'plains': 4,
+#         'forest': 5,
+#         'hills': 6,
+#         'mountain': 7,
+#         'snow': 8,
+#         'ice': 9
+#     }
+#     # Convert biome names to numbers
+#     return np.vectorize(biome_to_num.get)(biome_map)
+
+# Function to display the biome map with custom colors
+
+    # Define the color mapping for each biome
+
+noise_map = generate_terrain_map(MAP_WIDTH,MAP_HEIGHT,SCALE)
+# biome_map = assign_biomes(noise_map)
+# print(biome_map)
+# print(BASE)
+# display_biome_map(biome_map)
+# base_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=20, base=42)
+# base_colors = assign_biome_colors(base_noise_map)
+# # Generate additional layers (vegetation, rainfall)
+# vegetation_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=15, base=24)
+# rainfall_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=10, base=36)
+# # Normalize and convert vegetation and rainfall to grayscale colors
+# vegetation_colors = np.stack([vegetation_noise_map] * 3, axis=-1)  # Gray-scale
+# rainfall_colors = np.stack([rainfall_noise_map] * 3, axis=-1)      # Gray-scale
+# # Blend layers
+# final_map = blend_layers(base_colors, vegetation_colors, rainfall_colors, vegetation_weight=0.6, rainfall_weight=0.4)
+# # Display final map
+# plt.figure(figsize=(10, 10))
+# plt.imshow(final_map, origin='upper', interpolation='nearest')
+# plt.axis('off')
+# plt.title("Blended Biome Map")

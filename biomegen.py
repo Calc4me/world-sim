@@ -1,18 +1,57 @@
-#THIS IS AN OVERVIEW THIS DOES NOT WORK WILL FIX LATER DO NOT RUN
 import random
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.colors import ListedColormap, BoundaryNorm
+from matplotlib.colors import ListedColormap
 
-# Constants for map dimensions and noise
+# Define corresponding biome names
+biome_names = [
+    'deep_ocean', 'ocean', 'high_ocean', 'river', 
+    'plains', 'forest', 'hills', 'mountain', 'snow', 'ice'
+]
+
+# Define biome thresholds and base colors
+DEEP_OCEAN_THRESHOLD = -0.75
+OCEAN_THRESHOLD = -0.5
+HIGH_OCEAN_THRESHOLD = -0.3
+RIVER_THRESHOLD = -0.15
+PLAINS_THRESHOLD = 0.4
+FOREST_THRESHOLD = 0.5
+HILLS_THRESHOLD = 0.6
+MOUNTAIN_THRESHOLD = 0.85
+SNOW_THRESHOLD = 0.97
+ICE_THRESHOLD = 1
+
+BIOME_COLORS = {
+    'deep_ocean': (0, 0, 139),   # Dark Blue
+    'ocean': (0, 0, 255),        # Blue
+    'high_ocean': (173, 216, 230), # Light Blue
+    'river': (0, 255, 255),      # Cyan
+    'plains': (255, 255, 0),     # Yellow
+    'forest': (34, 139, 34),     # Forest Green
+    'hills': (210, 105, 30),     # Brown
+    'mountain': (169, 169, 169), # Gray
+    'snow': (255, 250, 250),     # White
+    'ice': (240, 248, 255)       # Light Cyan
+}
+
+BIOME_COLORS = {k: np.array(v) / 255.0 for k, v in BIOME_COLORS.items()}
+
+# Define thresholds in a list (sorted)
+thresholds = [
+    DEEP_OCEAN_THRESHOLD, OCEAN_THRESHOLD, HIGH_OCEAN_THRESHOLD,
+    RIVER_THRESHOLD, PLAINS_THRESHOLD, FOREST_THRESHOLD, 
+    HILLS_THRESHOLD, MOUNTAIN_THRESHOLD, SNOW_THRESHOLD, ICE_THRESHOLD
+]
+
+#Map dimensions
 MAP_WIDTH = 50
 MAP_HEIGHT = 50
-SCALE = 10  # Adjust to control the "zoom" level of terrain
-BASE = random.randint(0,10**6)
+SCALE = 50  # Adjust to control the "zoom" level of terrain
+BASE = random.randint(0,10**6) #"seed"
 
 # A basic implementation of a fade function (to ease the interpolation)
 def fade(t):
-    return t * t * t * (t * (t * 6 - 15) + 10)
+    return 1 / (1 + 4 ** ((-1) * ((8 * (t - 0.5))/(0.9 - (t - 0.5) ** 2))))
 
 # A basic implementation of linear interpolation
 def lerp(a, b, t):
@@ -91,85 +130,96 @@ def generate_perlin_noise_with_octaves(width, height, scale=100, octaves=6, pers
 # Generate Perlin noise-based map
 def generate_terrain_map(width, height, scale):
     return generate_perlin_noise_with_octaves(width, height, scale, base=BASE)
-def value_to_biome(value):
-    if value <= -0.6:
-        return 'ocean'
-    elif value <= -0.2:
-        return 'river'
-    elif value <= 0.2:
-        return 'plains'
-    elif value <= 0.4:
-        return 'forest'
-    elif value <= 0.6:
-        return 'hills'
-    elif value <= 0.8:
-        return 'mountain'
-    else:
-        return 'snow'
 
-# Function to generate the biome map from the noise grid
-def generate_biome_map(noise_grid):
-    biome_map = []
-    for row in noise_grid:
-        biome_row = [value_to_biome(value) for value in row]
-        biome_map.append(biome_row)
-    return np.array(biome_map)
+def assign_biome_properties(noise_map, veg_map, rain_map):
+    thresholds = [
+        DEEP_OCEAN_THRESHOLD, OCEAN_THRESHOLD, HIGH_OCEAN_THRESHOLD,
+        RIVER_THRESHOLD, PLAINS_THRESHOLD, FOREST_THRESHOLD, 
+        HILLS_THRESHOLD, MOUNTAIN_THRESHOLD, SNOW_THRESHOLD, ICE_THRESHOLD
+    ]
+    biome_names = [
+        'deep_ocean', 'ocean', 'high_ocean', 'river', 
+        'plains', 'forest', 'hills', 'mountain', 'snow', 'ice'
+    ]
+    
+    biome_indices = np.digitize(noise_map, thresholds) - 1
+    biome_indices = np.clip(biome_indices, 0, len(biome_names) - 1)
+    
+    biome_array = []
+    for x in range(noise_map.shape[0]):
+        row = []
+        for y in range(noise_map.shape[1]):
+            biome = biome_names[biome_indices[x, y]]
+            row.append({
+                "biome": biome,
+                "value": noise_map[x, y],
+                "veg": veg_map[x, y],
+                "rain": rain_map[x, y]
+            })
+        biome_array.append(row)
+    
+    return np.array(biome_array)
 
-# Function to map biome names to numbers
-def biome_to_number(biome_map):
-    # Define a dictionary that maps biome names to unique integers
-    biome_to_num = {
-        'ocean': 0,
-        'river': 1,
-        'plains': 2,
-        'forest': 3,
-        'hills': 4,
-        'mountain': 5,
-        'snow': 6
-    }
-    # Convert biome names to numbers
-    return np.vectorize(biome_to_num.get)(biome_map)
+#Display map
+def display_biome_map(biome_array):
+    width, height = biome_array.shape
+    
+    # Create a color map for visualization
+    color_map = np.zeros((width, height, 3))  # RGB map
+    
+    for x in range(width):
+        for y in range(height):
+            cell = biome_array[x, y]
+            base_color = BIOME_COLORS[cell["biome"]]
+            
+            # Modulate base color by vegetation and rainfall
+            veg_factor = (cell["veg"] + 1) / 2  # Normalize [-1, 1] to [0, 1]
+            rain_factor = (cell["rain"] + 1) / 2
+            
+            # Blend base color with vegetation (greenish) and rainfall (blueish)
+            blended_color = (
+                0.6 * base_color + 
+                0.2 * np.array([0, veg_factor, 0]) +  # Green for vegetation
+                0.2 * np.array([0, 0, rain_factor])   # Blue for rainfall
+            )
+            color_map[x, y] = np.clip(blended_color, 0, 1)
+    
+    plt.figure(figsize=(10, 10))
+    plt.imshow(color_map, origin='upper', interpolation='nearest')
+    plt.axis('off')
+    plt.title("Biome Map with Vegetation and Rainfall")
+    plt.show(block=False)
 
-# Function to display the biome map with custom colors
-def display_biome_map(biome_map):
-    # Define the color mapping for each biome
-    biome_colors = {
-        'ocean': 'blue',
-        'river': 'cyan',
-        'plains': 'yellow',
-        'forest': 'green',
-        'hills': 'orange',
-        'mountain': 'gray',
-        'snow': 'white'
-    }
+def display_base_biome_map(biome_array):
+    """
+    Displays the base biome map using only the biome colors.
+    """
+    width, height = biome_array.shape
 
-    # Convert biome names to their corresponding color
-    color_map = np.vectorize(biome_colors.get)(biome_map)
+    # Create a color map for visualization
+    color_map = np.zeros((width, height, 3))  # RGB map
 
-    # Create a colormap using the color list
-    cmap = ListedColormap(list(biome_colors.values()))
+    for x in range(width):
+        for y in range(height):
+            cell = biome_array[x, y]
+            base_color = BIOME_COLORS[cell["biome"]]
+            color_map[x, y] = base_color
 
-    # Create a numerical representation of the biome map
-    numerical_biome_map = biome_to_number(biome_map)
+    # Display the map
+    plt.figure(figsize=(10, 10))
+    plt.imshow(color_map, origin='upper', interpolation='nearest')
+    plt.axis('off')
+    plt.title("Base Biome Map")
+    plt.show(block=False)
 
-    # Display the biome map with custom colors using imshow
-    plt.figure(figsize=(8, 8))
-    plt.imshow(numerical_biome_map, cmap=cmap, origin='upper', interpolation='nearest')
-    plt.colorbar(label='Biome Types')  # Add colorbar for reference
-    plt.title("World Biome Map")
-    plt.show()
+base_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=20, base=42)
+vegetation_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=15, base=24)
+rainfall_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_WIDTH, scale=10, base=36)
 
-ngrid = generate_terrain_map(MAP_WIDTH,MAP_HEIGHT,SCALE)
-bmap = generate_biome_map(ngrid)
-print(bmap)
-display_biome_map(bmap)
-OCEAN_THRESHOLD = 0.2
-RIVER_THRESHOLD = 0.3
-PLAINS_THRESHOLD = 0.45
-FOREST_THRESHOLD = 0.6
-HILLS_THRESHOLD = 0.7
-MOUNTAIN_THRESHOLD = 0.85
-SNOW_THRESHOLD = 1.0
-
-
-
+# Assign biome properties
+biome_array = assign_biome_properties(base_noise_map, vegetation_noise_map, rainfall_noise_map)
+print(biome_array)
+# Display the biome map
+display_biome_map(biome_array)
+display_base_biome_map(biome_array)
+plt.show()
