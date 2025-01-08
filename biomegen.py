@@ -37,6 +37,26 @@ BIOME_COLORS = {
     'snow': (158, 154, 152),     # White
     'ice': (237, 242, 237)       # Light Cyan
 }
+
+biome_colors = {
+    'deep ocean': 'darkblue',
+    'ocean': 'blue',
+    'beach': 'khaki',
+    'grassland': 'limegreen',
+    'savanna': 'yellow',
+    'desert': 'gold',
+    'forest': 'green',
+    'rainforest': 'darkgreen',
+    'swamp': 'olive',
+    'steppe': 'tan',
+    'tundra': 'lightgray',
+    'hills': 'sienna',
+    'plateau': 'peru',
+    'mountain': 'gray',
+    'snowy peaks': 'white',
+    'snow': 'lightblue'
+}
+
 BIOME_COLORS = {k: np.array(v) / 255.0 for k, v in BIOME_COLORS.items()}
 
 # Define thresholds in a list (sorted)
@@ -51,6 +71,7 @@ MAP_WIDTH = 60
 MAP_HEIGHT = 60
 SCALE = 60  # Adjust to control the "zoom" level of terrain (high -> zoom in, low -> zoom out)
 BASE = random.randint(0,10**6) # "seed"
+
 
 # A basic implementation of a fade function (to ease the interpolation)
 def fade(t):
@@ -130,9 +151,47 @@ def generate_perlin_noise_with_octaves(width, height, scale=100, octaves=6, pers
     
     return normalized_grid
 
-# Generate Perlin noise-based map
-def generate_terrain_map(width, height, scale):
-    return generate_perlin_noise_with_octaves(width, height, scale, base=BASE)
+def generate_noise_grid(width, height, scale, octaves, persistence, lacunarity, base):
+    grid = generate_perlin_noise_with_octaves(
+        width, height, scale, octaves, persistence, lacunarity, base
+    )
+    # Normalize grid to [0, 1] for convenience
+    min_value = np.min(grid)
+    max_value = np.max(grid)
+    return (grid - min_value) / (max_value - min_value)
+
+
+def classify_biome_optimized(height, temperature, rainfall):
+    if height < 0.2:
+        if temperature < 0.4:
+            return 'deep ocean'
+        return 'ocean'
+    elif height < 0.3:
+        return 'beach'
+    elif height < 0.5:
+        if rainfall > 0.7:
+            return 'swamp'
+        if temperature > 0.6:
+            return 'savanna'
+        if temperature < 0.3:
+            return 'tundra'
+        return 'grassland'
+    elif height < 0.7:
+        if rainfall > 0.8:
+            return 'rainforest'
+        if rainfall < 0.4:
+            return 'steppe'
+        return 'forest'
+    elif height < 0.85:
+        return 'hills'
+    elif height < 0.95:
+        return 'plateau'
+    elif height < 1.0:
+        if temperature < 0.3:
+            return 'snowy peaks'
+        return 'mountain'
+    else:
+        return 'snow'
 
 def assign_biome_properties(noise_map, veg_map, rain_map):
     thresholds = [
@@ -163,38 +222,76 @@ def assign_biome_properties(noise_map, veg_map, rain_map):
     
     return np.array(biome_array)
 
+def generate_master_biome_map_optimized(heightmap, temperature_map, rainfall_map):
+    rows, cols = heightmap.shape
+    master_biome_map = np.empty((rows, cols), dtype='<U20')  # Preallocate with string type
+
+    for y in range(rows):
+        for x in range(cols):
+            height = heightmap[y, x]
+            temperature = temperature_map[y, x]
+            rainfall = rainfall_map[y, x]
+            # Classify biome based on the optimized function
+            master_biome_map[y, x] = classify_biome_optimized(height, temperature, rainfall)
+
+    return master_biome_map
 #Display map
-def display_biome_map(biome_array):
+def display_biome_map_with_modifiers(biome_array, heightmap, temperature_map, rainfall_map):
+    """
+    Display a biome map with colors modulated by vegetation and rainfall factors.
+    
+    biome_array: 2D array of biome strings (e.g., 'forest', 'desert', etc.)
+    heightmap, temperature_map, rainfall_map: 2D arrays of corresponding modifiers.
+    """
+    # Biome colors
+    BIOME_COLORS = {
+        'deep ocean': np.array([0.0, 0.0, 0.5]),       # Dark Blue
+        'ocean': np.array([0.0, 0.0, 1.0]),           # Blue
+        'beach': np.array([0.9, 0.9, 0.6]),           # Khaki
+        'grassland': np.array([0.5, 1.0, 0.5]),       # Lime Green
+        'savanna': np.array([1.0, 1.0, 0.0]),         # Yellow
+        'desert': np.array([1.0, 0.8, 0.4]),          # Gold
+        'forest': np.array([0.0, 0.6, 0.0]),          # Green
+        'rainforest': np.array([0.0, 0.4, 0.0]),      # Dark Green
+        'swamp': np.array([0.4, 0.4, 0.0]),           # Olive
+        'steppe': np.array([0.7, 0.5, 0.3]),          # Tan
+        'tundra': np.array([0.8, 0.8, 0.8]),          # Light Gray
+        'hills': np.array([0.6, 0.4, 0.2]),           # Sienna
+        'plateau': np.array([0.8, 0.6, 0.4]),         # Peru
+        'mountain': np.array([0.5, 0.5, 0.5]),        # Gray
+        'snowy peaks': np.array([1.0, 1.0, 1.0]),     # White
+        'snow': np.array([0.9, 0.9, 1.0]),            # Light Blue
+    }
+    
+    # Prepare the color map
     width, height = biome_array.shape
-    
-    # Create a color map for visualization
     color_map = np.zeros((width, height, 3))  # RGB map
-    
+
     for x in range(width):
         for y in range(height):
-            cell = biome_array[x, y]
-            base_color = BIOME_COLORS[cell["biome"]]
-            
-            # Modulate base color by vegetation and rainfall
-            veg_factor = 1 - ((cell["veg"] + 1) / 2 ) # Normalize [-1, 1] to [0, 1]
-            rain_factor = (cell["rain"] + 1) / 2
-            
-            # Flip rainfall contribution: higher rain = darker
-            inverted_rain_factor = 1 - rain_factor
-            
-            # Blend base color with vegetation (greenish) and rainfall (darker for high rain)
-            blended_color = (
-                BASE_BLEND * base_color + 
-                VE_BLEND * np.array([0.2 * veg_factor, 0.4 * veg_factor, 0.2 * veg_factor]) +  # Green for vegetation
-                RAIN_BLEND * np.array([0.2 * inverted_rain_factor, 0.3 * inverted_rain_factor, 1.0 * inverted_rain_factor])  # Blue for low rain
-            )
+            # Get biome and base color
+            biome = biome_array[x, y]
+            base_color = BIOME_COLORS[biome]
+
+            # Get modifiers
+            veg_factor = (heightmap[x, y] + 1) / 2       # Normalize heightmap [-1, 1] to [0, 1]
+            rain_factor = (rainfall_map[x, y] + 1) / 2   # Normalize rainfall [-1, 1] to [0, 1]
+
+            # Adjust the biome color based on vegetation and rainfall
+            vegetation_color = np.array([0.0, 0.5, 0.0]) * veg_factor  # Greenish tint for vegetation
+            rainfall_color = np.array([0.0, 0.0, 0.7]) * rain_factor   # Blueish tint for rainfall
+
+            # Combine base color with vegetation and rainfall modifiers
+            blended_color = base_color * 0.5 + vegetation_color * 0.3 + rainfall_color * 0.2
             color_map[x, y] = np.clip(blended_color, 0, 1)  # Ensure RGB values are in range [0, 1]
-    
+
+    # Display the map
     plt.figure(figsize=(10, 10))
     plt.imshow(color_map, origin='upper', interpolation='nearest')
     plt.axis('off')
-    plt.title("Biome Map with Vegetation and Rainfall (Flipped Rainfall)")
+    plt.title("Biome Map with Vegetation and Rainfall")
     plt.show(block=False)
+
 
 def display_base_biome_map(biome_array):
     """
@@ -239,14 +336,37 @@ def show_noise_maps(maps, titles):
     plt.tight_layout()
     plt.show(block=False)
 
-base_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=SCALE, base=BASE)
-vegetation_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=(SCALE/5), base=BASE)
-rainfall_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_WIDTH, scale=SCALE*2, base=BASE)
+def display_map(grid, title, cmap='viridis'):
+    plt.figure(figsize=(6, 6))
+    plt.imshow(grid, cmap=cmap, origin='upper')
+    plt.title(title)
+    plt.colorbar()
+    plt.show(block=False)
 
-biome_array = assign_biome_properties(base_noise_map, vegetation_noise_map, rainfall_noise_map)
-print("Seed: " + str(BASE))
-print("Size: " + str(MAP_HEIGHT) + "x" + str(MAP_WIDTH))
-display_biome_map(biome_array)
-display_base_biome_map(biome_array)
-show_noise_maps([vegetation_noise_map, rainfall_noise_map], ["Vegetation", "Rainfall"])
+#base_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=SCALE, base=BASE)
+vegetation_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=(SCALE/5), base=BASE)
+heightmap = generate_noise_grid(MAP_WIDTH, MAP_HEIGHT, SCALE, octaves=6, persistence=0.5, lacunarity=2.0, base=BASE)
+temperature_map = generate_noise_grid(MAP_WIDTH, MAP_HEIGHT, SCALE, octaves=4, persistence=0.6, lacunarity=2.5, base=BASE)
+rainfall_map = generate_noise_grid(MAP_WIDTH, MAP_HEIGHT, scale=SCALE*2, octaves=5, persistence=0.7, lacunarity=2.0, base=BASE)
+
+# biome_array = assign_biome_properties(base_noise_map, vegetation_noise_map, rainfall_noise_map)
+# print("Seed: " + str(BASE))
+# print("Size: " + str(MAP_HEIGHT) + "x" + str(MAP_WIDTH))
+# display_biome_map(biome_array)
+# display_base_biome_map(biome_array)
+# show_noise_maps([vegetation_noise_map, rainfall_noise_map], ["Vegetation", "Rainfall"])
+# plt.show()
+show_noise_maps([heightmap, temperature_map, rainfall_map, vegetation_noise_map], ["Heightmap", "Temp map", "Rain map", "Veg. Map"])
+master_biome_map = generate_master_biome_map_optimized(vegetation_noise_map, temperature_map, rainfall_map)
+biome_to_num = {biome: i for i, biome in enumerate(biome_colors.keys())}
+numerical_biome_map = np.vectorize(biome_to_num.get)(master_biome_map)
+display_biome_map_with_modifiers(master_biome_map, heightmap, temperature_map, rainfall_map)
+# Display the master biome map
+cmap = ListedColormap(list(biome_colors.values()))
+plt.figure(figsize=(8, 8))
+plt.imshow(numerical_biome_map, cmap=cmap, origin='upper', interpolation='nearest')
+plt.title("Biome Map")
+plt.colorbar(ticks=range(len(biome_colors)), label="Biome Types")
+plt.clim(-0.5, len(biome_colors) - 0.5)
+plt.show(block=False)
 plt.show()
