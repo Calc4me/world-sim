@@ -61,3 +61,11 @@ noise_map = generate_terrain_map(MAP_WIDTH,MAP_HEIGHT,SCALE)
 # plt.imshow(final_map, origin='upper', interpolation='nearest')
 # plt.axis('off')
 # plt.title("Blended Biome Map")
+
+# VE_MIN = (54, 37, 16)
+# VE_MAX =  (38, 135, 41)
+# RAIN_MIN = (86, 86, 186)
+# RAIN_MAX = (16, 16, 105)
+# BASE_BLEND = 0.5
+# VE_BLEND = 0.15
+# RAIN_BLEND = 0.35

@@ -12,28 +12,31 @@ biome_names = [
 # Define biome thresholds and base colors
 DEEP_OCEAN_THRESHOLD = -0.75
 OCEAN_THRESHOLD = -0.5
-HIGH_OCEAN_THRESHOLD = -0.3
+HIGH_OCEAN_THRESHOLD = -0.25
 RIVER_THRESHOLD = -0.15
-PLAINS_THRESHOLD = 0.4
-FOREST_THRESHOLD = 0.5
-HILLS_THRESHOLD = 0.6
+PLAINS_THRESHOLD = 0.15
+FOREST_THRESHOLD = 0.4
+HILLS_THRESHOLD = 0.65
 MOUNTAIN_THRESHOLD = 0.85
-SNOW_THRESHOLD = 0.97
+SNOW_THRESHOLD = 0.95
 ICE_THRESHOLD = 1
 
-BIOME_COLORS = {
-    'deep_ocean': (0, 0, 139),   # Dark Blue
-    'ocean': (0, 0, 255),        # Blue
-    'high_ocean': (173, 216, 230), # Light Blue
-    'river': (0, 255, 255),      # Cyan
-    'plains': (255, 255, 0),     # Yellow
-    'forest': (34, 139, 34),     # Forest Green
-    'hills': (210, 105, 30),     # Brown
-    'mountain': (169, 169, 169), # Gray
-    'snow': (255, 250, 250),     # White
-    'ice': (240, 248, 255)       # Light Cyan
-}
+BASE_BLEND = 1
+VE_BLEND = 0.3
+RAIN_BLEND = 0.4
 
+BIOME_COLORS = {
+    'deep_ocean': (5, 17, 36),   # Dark Blue
+    'ocean': (0, 40, 72),        # Blue
+    'high_ocean': (16, 62, 98), # Light Blue
+    'river': (30, 88, 128),      # Cyan
+    'plains': (60, 112, 45),     # Yellow
+    'forest': (27, 59, 27),     # Forest Green
+    'hills': (110, 83, 60),     # Brown
+    'mountain': (74, 70, 67), # Gray
+    'snow': (158, 154, 152),     # White
+    'ice': (237, 242, 237)       # Light Cyan
+}
 BIOME_COLORS = {k: np.array(v) / 255.0 for k, v in BIOME_COLORS.items()}
 
 # Define thresholds in a list (sorted)
@@ -44,10 +47,10 @@ thresholds = [
 ]
 
 #Map dimensions
-MAP_WIDTH = 50
-MAP_HEIGHT = 50
-SCALE = 50  # Adjust to control the "zoom" level of terrain
-BASE = random.randint(0,10**6) #"seed"
+MAP_WIDTH = 60
+MAP_HEIGHT = 60
+SCALE = 60  # Adjust to control the "zoom" level of terrain (high -> zoom in, low -> zoom out)
+BASE = random.randint(0,10**6) # "seed"
 
 # A basic implementation of a fade function (to ease the interpolation)
 def fade(t):
@@ -173,21 +176,24 @@ def display_biome_map(biome_array):
             base_color = BIOME_COLORS[cell["biome"]]
             
             # Modulate base color by vegetation and rainfall
-            veg_factor = (cell["veg"] + 1) / 2  # Normalize [-1, 1] to [0, 1]
+            veg_factor = 1 - ((cell["veg"] + 1) / 2 ) # Normalize [-1, 1] to [0, 1]
             rain_factor = (cell["rain"] + 1) / 2
             
-            # Blend base color with vegetation (greenish) and rainfall (blueish)
+            # Flip rainfall contribution: higher rain = darker
+            inverted_rain_factor = 1 - rain_factor
+            
+            # Blend base color with vegetation (greenish) and rainfall (darker for high rain)
             blended_color = (
-                0.6 * base_color + 
-                0.2 * np.array([0, veg_factor, 0]) +  # Green for vegetation
-                0.2 * np.array([0, 0, rain_factor])   # Blue for rainfall
+                BASE_BLEND * base_color + 
+                VE_BLEND * np.array([0.2 * veg_factor, 0.4 * veg_factor, 0.2 * veg_factor]) +  # Green for vegetation
+                RAIN_BLEND * np.array([0.2 * inverted_rain_factor, 0.3 * inverted_rain_factor, 1.0 * inverted_rain_factor])  # Blue for low rain
             )
-            color_map[x, y] = np.clip(blended_color, 0, 1)
+            color_map[x, y] = np.clip(blended_color, 0, 1)  # Ensure RGB values are in range [0, 1]
     
     plt.figure(figsize=(10, 10))
     plt.imshow(color_map, origin='upper', interpolation='nearest')
     plt.axis('off')
-    plt.title("Biome Map with Vegetation and Rainfall")
+    plt.title("Biome Map with Vegetation and Rainfall (Flipped Rainfall)")
     plt.show(block=False)
 
 def display_base_biome_map(biome_array):
@@ -212,14 +218,35 @@ def display_base_biome_map(biome_array):
     plt.title("Base Biome Map")
     plt.show(block=False)
 
-base_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=20, base=42)
-vegetation_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=15, base=24)
-rainfall_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_WIDTH, scale=10, base=36)
+def show_noise_maps(maps, titles):
+    """
+    Display multiple noise maps side by side for comparison.
 
-# Assign biome properties
+    Parameters:
+    - maps: List of 2D arrays (noise maps) to display.
+    - titles: List of titles for the corresponding maps.
+    - cmap: Colormap to use for the plots.
+    """
+    num_maps = len(maps)
+    fig, axes = plt.subplots(1, num_maps, figsize=(5 * num_maps, 5))
+    
+    for i, ax in enumerate(axes):
+        im = ax.imshow(maps[i], cmap='seismic', origin='upper')
+        ax.set_title(titles[i], fontsize=14)
+        ax.axis('off')
+        fig.colorbar(im, ax=ax, shrink=0.7)
+    
+    plt.tight_layout()
+    plt.show(block=False)
+
+base_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=SCALE, base=BASE)
+vegetation_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_HEIGHT, scale=(SCALE/5), base=BASE)
+rainfall_noise_map = generate_perlin_noise_with_octaves(MAP_WIDTH, MAP_WIDTH, scale=SCALE*2, base=BASE)
+
 biome_array = assign_biome_properties(base_noise_map, vegetation_noise_map, rainfall_noise_map)
-print(biome_array)
-# Display the biome map
+print("Seed: " + str(BASE))
+print("Size: " + str(MAP_HEIGHT) + "x" + str(MAP_WIDTH))
 display_biome_map(biome_array)
 display_base_biome_map(biome_array)
+show_noise_maps([vegetation_noise_map, rainfall_noise_map], ["Vegetation", "Rainfall"])
 plt.show()
