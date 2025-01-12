@@ -161,37 +161,71 @@ def generate_noise_grid(width, height, scale, octaves, persistence, lacunarity, 
     return (grid - min_value) / (max_value - min_value)
 
 
-def classify_biome_optimized(height, temperature, rainfall):
-    if height < 0.2:
-        if temperature < 0.4:
-            return 'deep ocean'
-        return 'ocean'
-    elif height < 0.3:
-        return 'beach'
-    elif height < 0.5:
-        if rainfall > 0.7:
-            return 'swamp'
-        if temperature > 0.6:
-            return 'savanna'
-        if temperature < 0.3:
-            return 'tundra'
-        return 'grassland'
-    elif height < 0.7:
-        if rainfall > 0.8:
-            return 'rainforest'
-        if rainfall < 0.4:
-            return 'steppe'
-        return 'forest'
-    elif height < 0.85:
-        return 'hills'
-    elif height < 0.95:
-        return 'plateau'
-    elif height < 1.0:
-        if temperature < 0.3:
-            return 'snowy peaks'
-        return 'mountain'
-    else:
-        return 'snow'
+def generate_master_biome_map(elevation, temperature, rainfall, vegetation):
+    """
+    Generate a master biome map considering elevation, temperature, rainfall, and vegetation.
+    Elevation prevails, followed by temperature, then rainfall for more landmass.
+    """
+    width, height = elevation.shape
+    biome_map = np.empty((width, height), dtype=object)
+
+    for x in range(width):
+        for y in range(height):
+            # Get environmental values for this cell
+            elev = elevation[x, y]
+            temp = temperature[x, y]
+            rain = rainfall[x, y]
+            veg = vegetation[x, y]
+
+            # Assign biome based on elevation first, temperature second, rainfall third
+            if elev < -0.4:  # Deep ocean
+                biome = "deep ocean"
+            elif elev < -0.1:  # Ocean
+                biome = "ocean"
+            elif elev < 0.05:  # Beach
+                biome = "beach"
+            elif elev > 0.7:  # High elevation
+                if temp < -0.2:
+                    biome = "snowy peaks" if elev > 0.85 else "mountain"
+                else:
+                    biome = "mountain" if elev > 0.8 else "plateau"
+            elif temp < -0.3:  # Cold biomes
+                if rain < 0.2:
+                    biome = "tundra"
+                else:
+                    biome = "snow"
+            elif temp < 0.2:  # Temperate biomes
+                if rain < 0.1:
+                    biome = "steppe"
+                elif rain < 0.4:
+                    biome = "grassland"
+                elif veg > 0.5:
+                    biome = "forest"
+                else:
+                    biome = "hills"
+            elif temp < 0.6:  # Warm biomes
+                if rain < 0.2:
+                    biome = "savanna"
+                elif rain < 0.5:
+                    biome = "grassland"
+                elif veg > 0.6:
+                    biome = "rainforest"
+                else:
+                    biome = "forest"
+            else:  # Hot biomes
+                if rain < 0.1:
+                    biome = "desert"
+                elif rain < 0.3:
+                    biome = "savanna"
+                elif veg > 0.4:
+                    biome = "rainforest"
+                else:
+                    biome = "swamp"
+
+            # Assign biome to the master map
+            biome_map[x, y] = biome
+
+    return biome_map
 
 def assign_biome_properties(noise_map, veg_map, rain_map):
     thresholds = [
@@ -222,19 +256,74 @@ def assign_biome_properties(noise_map, veg_map, rain_map):
     
     return np.array(biome_array)
 
-def generate_master_biome_map_optimized(heightmap, temperature_map, rainfall_map):
-    rows, cols = heightmap.shape
-    master_biome_map = np.empty((rows, cols), dtype='<U20')  # Preallocate with string type
+def display_master_biome_map_with_colorbar(biome_map, elevation, temperature, rainfall):
+    """
+    Display a biome map with proper color mixing and a colorbar showing biome names.
+    """
+    BIOME_COLORS = {
+        'deep ocean': np.array([0.0, 0.0, 0.5]),       # Dark Blue
+        'ocean': np.array([0.0, 0.0, 1.0]),           # Blue
+        'beach': np.array([0.9, 0.9, 0.6]),           # Khaki
+        'grassland': np.array([0.5, 1.0, 0.5]),       # Lime Green
+        'savanna': np.array([1.0, 1.0, 0.0]),         # Yellow
+        'desert': np.array([1.0, 0.8, 0.4]),          # Gold
+        'forest': np.array([0.0, 0.6, 0.0]),          # Green
+        'rainforest': np.array([0.0, 0.4, 0.0]),      # Dark Green
+        'swamp': np.array([0.4, 0.4, 0.0]),           # Olive
+        'steppe': np.array([0.7, 0.5, 0.3]),          # Tan
+        'tundra': np.array([0.8, 0.8, 0.8]),          # Light Gray
+        'hills': np.array([0.6, 0.4, 0.2]),           # Sienna
+        'plateau': np.array([0.8, 0.6, 0.4]),         # Peru
+        'mountain': np.array([0.5, 0.5, 0.5]),        # Gray
+        'snowy peaks': np.array([1.0, 1.0, 1.0]),     # White
+        'snow': np.array([0.9, 0.9, 1.0]),            # Light Blue
+    }
 
-    for y in range(rows):
-        for x in range(cols):
-            height = heightmap[y, x]
-            temperature = temperature_map[y, x]
-            rainfall = rainfall_map[y, x]
-            # Classify biome based on the optimized function
-            master_biome_map[y, x] = classify_biome_optimized(height, temperature, rainfall)
+    # Prepare a colormap for the colorbar
+    biome_names = list(BIOME_COLORS.keys())
+    cmap = plt.cm.colors.ListedColormap([BIOME_COLORS[name] for name in biome_names])
+    norm = plt.cm.colors.BoundaryNorm(range(len(biome_names) + 1), cmap.N)
 
-    return master_biome_map
+    # Width and height of the map
+    width, height = biome_map.shape
+    color_map = np.zeros((width, height, 3))  # RGB map
+
+    for x in range(width):
+        for y in range(height):
+            biome = biome_map[x, y]
+            base_color = BIOME_COLORS[biome]
+
+            # Modulate color using elevation, temperature, and rainfall
+            elev_factor = (elevation[x, y] + 1) / 2      # Normalize [-1, 1] to [0, 1]
+            temp_factor = (temperature[x, y] + 1) / 2    # Normalize [-1, 1] to [0, 1]
+            rain_factor = (rainfall[x, y] + 1) / 2       # Normalize [-1, 1] to [0, 1]
+
+            # Proper color blending
+            blended_color = (
+                base_color * (0.6 + 0.4 * elev_factor) +  # Height emphasizes base color
+                np.array([0.2 * temp_factor, 0.1 * rain_factor, 0.1 * rain_factor])  # Add warmth and moisture
+            )
+            color_map[x, y] = np.clip(blended_color, 0, 1)  # Clamp RGB values to [0, 1]
+
+    # Create a figure and axes
+    fig, ax = plt.subplots(figsize=(10, 10))
+    im = ax.imshow(color_map, origin='upper', interpolation='nearest')
+    ax.axis('off')
+    ax.set_title("Master Biome Map with Environmental Modulation")
+
+    # Add a colorbar with biome labels
+    colorbar = plt.colorbar(
+        plt.cm.ScalarMappable(cmap=cmap, norm=norm),
+        ax=ax,  # Explicitly associate the colorbar with the axes
+        ticks=range(len(biome_names)),
+        orientation='vertical',
+        pad=0.02
+    )
+    colorbar.ax.set_yticklabels(biome_names, fontsize=8)
+    colorbar.set_label('Biome Types', fontsize=10)
+
+    plt.show()
+
 #Display map
 def display_biome_map_with_modifiers(biome_array, heightmap, temperature_map, rainfall_map):
     """
@@ -349,6 +438,10 @@ heightmap = generate_noise_grid(MAP_WIDTH, MAP_HEIGHT, SCALE, octaves=6, persist
 temperature_map = generate_noise_grid(MAP_WIDTH, MAP_HEIGHT, SCALE, octaves=4, persistence=0.6, lacunarity=2.5, base=BASE)
 rainfall_map = generate_noise_grid(MAP_WIDTH, MAP_HEIGHT, scale=SCALE*2, octaves=5, persistence=0.7, lacunarity=2.0, base=BASE)
 
+show_noise_maps([heightmap, temperature_map, rainfall_map, vegetation_noise_map], ["Heightmap", "Temp map", "Rain map", "Veg. Map"])
+master_biome_map = generate_master_biome_map(heightmap, temperature_map, rainfall_map, vegetation_noise_map)
+print(master_biome_map)
+display_master_biome_map_with_colorbar(master_biome_map, heightmap, temperature_map, rainfall_map)
 # biome_array = assign_biome_properties(base_noise_map, vegetation_noise_map, rainfall_noise_map)
 # print("Seed: " + str(BASE))
 # print("Size: " + str(MAP_HEIGHT) + "x" + str(MAP_WIDTH))
@@ -356,17 +449,18 @@ rainfall_map = generate_noise_grid(MAP_WIDTH, MAP_HEIGHT, scale=SCALE*2, octaves
 # display_base_biome_map(biome_array)
 # show_noise_maps([vegetation_noise_map, rainfall_noise_map], ["Vegetation", "Rainfall"])
 # plt.show()
-show_noise_maps([heightmap, temperature_map, rainfall_map, vegetation_noise_map], ["Heightmap", "Temp map", "Rain map", "Veg. Map"])
-master_biome_map = generate_master_biome_map_optimized(vegetation_noise_map, temperature_map, rainfall_map)
-biome_to_num = {biome: i for i, biome in enumerate(biome_colors.keys())}
-numerical_biome_map = np.vectorize(biome_to_num.get)(master_biome_map)
-display_biome_map_with_modifiers(master_biome_map, heightmap, temperature_map, rainfall_map)
-# Display the master biome map
-cmap = ListedColormap(list(biome_colors.values()))
-plt.figure(figsize=(8, 8))
-plt.imshow(numerical_biome_map, cmap=cmap, origin='upper', interpolation='nearest')
-plt.title("Biome Map")
-plt.colorbar(ticks=range(len(biome_colors)), label="Biome Types")
-plt.clim(-0.5, len(biome_colors) - 0.5)
-plt.show(block=False)
-plt.show()
+
+# master_biome_map = generate_master_biome_map_optimized(vegetation_noise_map, temperature_map, rainfall_map)
+# print(master_biome_map)
+# biome_to_num = {biome: i for i, biome in enumerate(biome_colors.keys())}
+# numerical_biome_map = np.vectorize(biome_to_num.get)(master_biome_map)
+# display_biome_map_with_modifiers(master_biome_map, heightmap, temperature_map, rainfall_map)
+# # Display the master biome map
+# cmap = ListedColormap(list(biome_colors.values()))
+# plt.figure(figsize=(8, 8))
+# plt.imshow(numerical_biome_map, cmap=cmap, origin='upper', interpolation='nearest')
+# plt.title("Biome Map")
+# plt.colorbar(ticks=range(len(biome_colors)), label="Biome Types")
+# plt.clim(-0.5, len(biome_colors) - 0.5)
+# plt.show(block=False)
+# plt.show()
